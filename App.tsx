@@ -188,7 +188,7 @@ export default function App() {
                 <div className="bg-slate-50 px-8 py-4 border-b border-slate-200 flex items-center justify-between">
                   <div className="flex items-center gap-6">
                     <div className="flex flex-col">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Entry Category</span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Key1</span>
                       <input 
                         value={entry.key1}
                         onChange={(e) => updateEntry(entry.id, 'key1', e.target.value.toUpperCase())}
@@ -196,7 +196,7 @@ export default function App() {
                       />
                     </div>
                     <div className="flex flex-col">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Short Code</span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Key2</span>
                       <input 
                         value={entry.key2}
                         onChange={(e) => updateEntry(entry.id, 'key2', e.target.value.toUpperCase())}

@@ -12,7 +12,7 @@ const INDUSTRY_DICT: Record<string, Record<string, string>> = {
   "Promotion": { cn: "优惠", kh: "ការផ្សព្វផ្សាយ", id: "Promosi", vn: "Khuyến mãi", th: "โปรโมชั่น", my: "Promosi" },
   "Turnover": { cn: "流水", kh: "ចរាចរណ៍សាច់ប្រាក់", id: "Perputaran", vn: "Doanh thu", th: "ยอดเทิร์นโอเวอร์", my: "Turnover" },
   "Rebate": { cn: "返水", kh: "ការបង្វិលប្រាក់", id: "Rabat", vn: "Hoàn trả", th: "คืนเงิน", my: "Rebat" },
-  "KYC Verification": { cn: "实名认证", kh: "ការផ្ទៀងផ្ទាត់អត្តសញ្ញាណ", id: "Verifikasi KYC", vn: "Xác minh danh tính", th: "การยืนยันตัวตน", my: "Pengesahan KYC" },
+  "KYC Verification": { cn: "实名认证", kh: "ការផ្ទៀងផ្ទាត់អត្តសញ្ញาណ", id: "Verifikasi KYC", vn: "Xác minh danh tính", th: "การยืนยันตัวตน", my: "Pengesahan KYC" },
   "Odds": { cn: "赔率", kh: "ហាងឆេង", id: "Peluang", vn: "Tỷ lệ cược", th: "อัตราต่อรอง", my: "Odds" },
   "Login": { cn: "登录", kh: "ចូល", id: "Masuk", vn: "Đăng nhập", th: "เข้าสู่ระบบ", my: "Log Masuk" },
   "Register": { cn: "注册", kh: "ចុះឈ្មោះ", id: "Daftar", vn: "Đăng ký", th: "ลงทะเบียน", my: "Daftar" },
@@ -26,7 +26,7 @@ const INDUSTRY_DICT: Record<string, Record<string, string>> = {
   "Stake": { cn: "本金", kh: "ប្រាក់ដើម", id: "Taruhan Utama", vn: "Tiền cược", th: "เงินเดิมพัน", my: "Stake" }
 };
 
-const CATEGORY_MAP: Record<string, string[]> = {
+const KEY1_MAP: Record<string, string[]> = {
   BANKING: ["deposit", "withdraw", "balance", "bank", "wallet", "transfer", "pay", "card"],
   GAMES: ["spin", "play", "jackpot", "bet", "win", "slot", "dealer", "odds", "stake", "multiplier"],
   ACCOUNT: ["login", "register", "profile", "settings", "password", "kyc", "user", "verify"],
@@ -40,18 +40,18 @@ export const mockGenerateCmsEntry = async (text: string): Promise<Omit<CmsEntry,
 
   const lowerText = text.toLowerCase();
   
-  // 1. Determine Category through keyword detection
-  let category = "COMMON";
-  for (const [cat, keywords] of Object.entries(CATEGORY_MAP)) {
+  // 1. Determine Key1 through keyword detection
+  let key1 = "COMMON";
+  for (const [cat, keywords] of Object.entries(KEY1_MAP)) {
     if (keywords.some(k => lowerText.includes(k))) {
-      category = cat;
+      key1 = cat;
       break;
     }
   }
 
-  // 2. Generate a clean, readable short code
+  // 2. Generate a clean Key2
   const cleanBase = text.trim().replace(/[^a-zA-Z0-9 ]/g, '').split(' ').slice(0, 2).join('_').toUpperCase();
-  const code = `${category === 'GAMES' ? 'GME' : category.substring(0, 3)}_${cleanBase || 'ACTION'}_${Math.floor(Math.random() * 900) + 100}`;
+  const key2 = `${key1 === 'GAMES' ? 'GME' : key1.substring(0, 3)}_${cleanBase || 'ACTION'}_${Math.floor(Math.random() * 900) + 100}`;
   
   // 3. Find accurate match or fallback
   const matchKey = Object.keys(INDUSTRY_DICT).find(k => k.toLowerCase() === lowerText) || 
@@ -69,8 +69,8 @@ export const mockGenerateCmsEntry = async (text: string): Promise<Omit<CmsEntry,
   };
 
   return {
-    key1: category,
-    key2: code,
+    key1,
+    key2,
     translations
   };
 };
@@ -78,7 +78,6 @@ export const mockGenerateCmsEntry = async (text: string): Promise<Omit<CmsEntry,
 export const mockRefineText = async (lang: string, current: string): Promise<string> => {
   await new Promise(resolve => setTimeout(resolve, 400));
   
-  // Provides variations for common actions
   const variations: Record<string, string[]> = {
     cn: ["确 认", "确定提交", "立即执行"],
     vn: ["Xác nhận", "Đồng ý", "Hoàn tất ngay"],
