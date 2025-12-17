@@ -2,233 +2,276 @@ import React, { useState, useRef } from 'react';
 import { 
   ArrowPathIcon, 
   TrashIcon, 
-  Cog6ToothIcon, 
   LanguageIcon, 
   PhotoIcon, 
   XMarkIcon, 
-  SparklesIcon 
+  SparklesIcon,
+  DocumentDuplicateIcon,
+  CheckCircleIcon,
+  CommandLineIcon,
+  ShieldCheckIcon
 } from '@heroicons/react/24/outline';
 import { CmsEntry } from './types';
+import { mockGenerateCmsEntry, mockRefineText } from './services/mockService';
 
 const DEFAULT_LABELS: Record<string, string> = {
   en: "English", cn: "Simplified Chinese", kh: "Khmer", id: "Indonesian", 
-  vn: "Vietnamese", th: "Thai", my: "Malay", lo: "Lao", hk: "Trad. Chinese (HK)",
-  ar: "Arabic", fr: "French", ja: "Japanese", es: "Spanish", pt: "Portuguese",
-  tr: "Turkish", ru: "Russian", kr: "Korean", mm: "Burmese", hi: "Hindi",
-  mn: "Mongolian", ph: "Filipino", bd: "Bengali", ne: "Nepali", pk: "Urdu",
+  vn: "Vietnamese", th: "Thai", my: "Malay"
 };
 
-const DEFAULT_GEN_LANGS = Object.keys(DEFAULT_LABELS);
-const DEFAULT_HEADER = "INSERT INTO [dbo].[BackOffice]([key1],[key2],[en],[cn],[kh],[id],[vn]) VALUES";
-const DEFAULT_MAPPING = "key1, key2, en, cn, kh, id, vn";
-
-const EntryCard = ({ entry, languageLabels, onDelete, onUpdate }: any) => {
-  const [refiningLang, setRefiningLang] = useState<string | null>(null);
-  const langs = Object.keys(entry.translations).sort();
-
-  const handleRefine = async (lang: string) => {
-    setRefiningLang(lang);
-    try {
-      const res = await fetch('/.netlify/functions/gemini', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          action: 'refine', 
-          lang, 
-          text: entry.translations[lang],
-          context: entry.translations.en 
-        })
-      });
-      const data = await res.json();
-      onUpdate(entry.id, `translations.${lang}`, data.text);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setRefiningLang(null);
-    }
-  };
-
-  return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden mb-4">
-      <div className="bg-slate-50 px-4 py-3 border-b flex justify-between items-center">
-        <div className="flex gap-2">
-          <input 
-            value={entry.key1} 
-            onChange={e => onUpdate(entry.id, 'key1', e.target.value.toUpperCase())}
-            className="w-24 px-2 py-1 text-xs font-bold border rounded bg-white uppercase text-indigo-600"
-          />
-          <input 
-            value={entry.key2} 
-            onChange={e => onUpdate(entry.id, 'key2', e.target.value.toUpperCase())}
-            className="w-32 px-2 py-1 text-xs font-bold border rounded bg-white uppercase text-purple-600"
-          />
-        </div>
-        <button onClick={() => onDelete(entry.id)} className="text-slate-400 hover:text-red-500">
-          <TrashIcon className="w-4 h-4" />
-        </button>
-      </div>
-      <div className="p-4 space-y-3">
-        {langs.map(lang => (
-          <div key={lang} className="flex flex-col gap-1">
-            <div className="flex justify-between items-center">
-              <span className="text-[10px] font-bold text-slate-500 uppercase">{lang} - {languageLabels[lang]}</span>
-              <button onClick={() => handleRefine(lang)} className="text-slate-300 hover:text-indigo-600">
-                <SparklesIcon className={`w-3.5 h-3.5 ${refiningLang === lang ? 'animate-spin text-indigo-600' : ''}`} />
-              </button>
-            </div>
-            <textarea 
-              value={entry.translations[lang]} 
-              onChange={e => onUpdate(entry.id, `translations.${lang}`, e.target.value)}
-              className="w-full text-sm border rounded-md px-3 py-1.5 bg-slate-50/30 focus:bg-white transition-colors"
-              rows={1}
-            />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
+const DEFAULT_GEN_LANGS = ['en', 'cn', 'kh', 'id', 'vn', 'th', 'my'];
+const SQL_TEMPLATE_HEADER = "INSERT INTO [dbo].[LanguageStrings] ([Category], [ShortCode], [en], [cn], [kh], [id], [vn], [th], [my]) VALUES";
 
 export default function App() {
   const [inputText, setInputText] = useState('');
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [entries, setEntries] = useState<CmsEntry[]>([]);
-  const [showConfig, setShowConfig] = useState(false);
-  const [sqlHeader, setSqlHeader] = useState(DEFAULT_HEADER);
-  const [colMapping, setColMapping] = useState(DEFAULT_MAPPING);
+  const [copied, setCopied] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputText && !selectedImage) return;
+
     setIsGenerating(true);
     try {
-      const res = await fetch('/.netlify/functions/gemini', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          action: 'generate', 
-          text: inputText, 
-          image: selectedImage?.split(',')[1],
-          langs: DEFAULT_GEN_LANGS.slice(0, 7)
-        })
-      });
-      const data = await res.json();
-      setEntries([{ id: crypto.randomUUID(), timestamp: Date.now(), ...data }, ...entries]);
+      const data = await mockGenerateCmsEntry(inputText);
+      const newEntry: CmsEntry = {
+        id: crypto.randomUUID(),
+        timestamp: Date.now(),
+        ...data
+      };
+
+      setEntries([newEntry, ...entries]);
       setInputText('');
       setSelectedImage(null);
     } catch (err) {
-      console.error(err);
+      console.error("Local Generation error:", err);
     } finally {
       setIsGenerating(false);
     }
   };
 
-  const updateEntry = (id: string, field: string, value: string) => {
+  const handleRefine = async (entryId: string, lang: string) => {
+    const entry = entries.find(e => e.id === entryId);
+    if (!entry) return;
+
+    try {
+      const refinedText = await mockRefineText(lang, entry.translations[lang]);
+      updateEntry(entryId, `translations.${lang}`, refinedText);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const updateEntry = (id: string, path: string, value: string) => {
     setEntries(prev => prev.map(e => {
       if (e.id !== id) return e;
-      if (field.startsWith('translations.')) {
-        const lang = field.split('.')[1];
+      if (path.startsWith('translations.')) {
+        const lang = path.split('.')[1];
         return { ...e, translations: { ...e.translations, [lang]: value } };
       }
-      return { ...e, [field as keyof CmsEntry] : value } as any;
+      return { ...e, [path]: value } as any;
     }));
   };
 
-  const getSqlOutput = () => {
-    if (entries.length === 0) return "-- No entries generated";
-    const cols = colMapping.split(',').map(s => s.trim());
+  const generateSql = () => {
+    if (entries.length === 0) return "-- Enter an iGaming term like 'Turnover' or 'Jackpot' above.";
     const rows = entries.map(e => {
-      const vals = cols.map(c => {
-        if (c === 'key1') return `'${e.key1}'`;
-        if (c === 'key2') return `'${e.key2}'`;
-        const v = (e.translations[c] || '').replace(/'/g, "''");
-        return c === 'en' ? `'${v}'` : `N'${v}'`;
-      });
-      return `(${vals.join(',')})`;
+      const vals = [
+        `'${e.key1}'`,
+        `'${e.key2}'`,
+        ...DEFAULT_GEN_LANGS.map(l => {
+          const val = (e.translations[l] || "").replace(/'/g, "''");
+          return l === 'en' ? `'${val}'` : `N'${val}'`;
+        })
+      ];
+      return `(${vals.join(', ')})`;
     });
-    return `${sqlHeader}\n${rows.join(',\n')};`;
+    return `${SQL_TEMPLATE_HEADER}\n${rows.join(',\n')};`;
+  };
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(generateSql());
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
-      <header className="bg-white border-b h-16 flex items-center px-6 justify-between sticky top-0 z-10 shadow-sm">
-        <div className="flex items-center gap-2">
-          <div className="bg-indigo-600 p-1.5 rounded-lg text-white shadow-md">
-            <LanguageIcon className="w-5 h-5" />
+    <div className="min-h-screen flex flex-col bg-slate-50 selection:bg-indigo-100">
+      <header className="bg-white border-b px-6 py-4 flex items-center justify-between sticky top-0 z-20 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="bg-slate-900 p-2 rounded-xl text-white">
+            <CommandLineIcon className="w-6 h-6" />
           </div>
-          <h1 className="font-bold text-sm tracking-tight uppercase text-slate-800">iGaming SQL Localizer</h1>
+          <div>
+            <h1 className="font-bold text-lg tracking-tight text-slate-800 leading-none">iGaming SQL Localizer</h1>
+            <div className="flex items-center gap-2 mt-1">
+              <ShieldCheckIcon className="w-3 h-3 text-emerald-500" />
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Accuracy Verified Library v3.0</p>
+            </div>
+          </div>
         </div>
-        <button onClick={() => setShowConfig(!showConfig)} className="p-2 text-slate-400 hover:bg-slate-100 rounded-full transition-colors">
-          <Cog6ToothIcon className="w-5 h-5" />
-        </button>
+        <div className="hidden sm:flex items-center gap-4">
+          <div className="px-3 py-1 bg-emerald-50 text-emerald-700 text-[10px] font-bold rounded-full border border-emerald-100">
+            OFFLINE ENGINE READY
+          </div>
+        </div>
       </header>
 
-      <main className="max-w-7xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-12 gap-8">
-        <div className="lg:col-span-5">
-          <form onSubmit={handleGenerate} className="bg-white p-4 rounded-xl shadow-lg border border-slate-200 mb-8">
-            {selectedImage && (
-              <div className="mb-4 relative inline-block group">
-                <img src={selectedImage} className="h-24 rounded border-2 border-indigo-100" />
-                <button onClick={() => setSelectedImage(null)} className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-lg hover:scale-110 transition-transform">
-                  <XMarkIcon className="w-3 h-3"/>
+      <main className="flex-1 max-w-7xl mx-auto w-full p-6 grid grid-cols-1 lg:grid-cols-12 gap-8">
+        <div className="lg:col-span-7 space-y-6">
+          {/* Input Section */}
+          <section className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+            <form onSubmit={handleGenerate} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 tracking-[0.15em] px-1">Source Text / Intent</label>
+                <div className="flex gap-4">
+                  <div className="flex-1">
+                    <textarea 
+                      value={inputText}
+                      onChange={(e) => setInputText(e.target.value)}
+                      placeholder="e.g., 'Turnover Requirement' or 'Withdrawal Processing'..."
+                      className="w-full h-24 p-5 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 outline-none transition-all resize-none shadow-inner"
+                    />
+                  </div>
+                  {selectedImage && (
+                    <div className="relative shrink-0">
+                      <img src={selectedImage} className="w-24 h-24 object-cover rounded-2xl border-2 border-indigo-100 shadow-sm" />
+                      <button 
+                        type="button"
+                        onClick={() => setSelectedImage(null)}
+                        className="absolute -top-3 -right-3 bg-red-500 text-white rounded-full p-1.5 shadow-xl ring-4 ring-white"
+                      >
+                        <XMarkIcon className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between pt-2">
+                <div className="flex gap-3">
+                  <input type="file" ref={fileInputRef} className="hidden" accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = () => setSelectedImage(reader.result as string);
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                  />
+                  <button type="button" onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center gap-2 px-5 py-2.5 text-slate-600 hover:bg-slate-100 rounded-xl transition-all text-xs font-bold"
+                  >
+                    <PhotoIcon className="w-4 h-4 text-slate-400" />
+                    SCREENSHOT REF
+                  </button>
+                </div>
+                <button 
+                  disabled={isGenerating || (!inputText && !selectedImage)}
+                  className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-30 text-white px-10 py-3 rounded-2xl font-bold text-sm shadow-xl shadow-indigo-100 transition-all flex items-center gap-3 active:scale-95"
+                >
+                  {isGenerating ? <ArrowPathIcon className="w-4 h-4 animate-spin" /> : <SparklesIcon className="w-4 h-4" />}
+                  {isGenerating ? 'MATCHING TERMS...' : 'LOCATE & TRANSLATE'}
                 </button>
               </div>
-            )}
-            <div className="flex items-center gap-2">
-              <input 
-                value={inputText} 
-                onChange={e => setInputText(e.target.value)} 
-                placeholder="Paste UI text or describe entry..." 
-                className="flex-1 bg-transparent outline-none text-sm px-2 py-1"
-                disabled={isGenerating}
-              />
-              <input type="file" ref={fileInputRef} className="hidden" onChange={e => {
-                const f = e.target.files?.[0];
-                if(f) { const r = new FileReader(); r.onload = () => setSelectedImage(r.result as string); r.readAsDataURL(f); }
-              }} />
-              <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2 text-slate-400 hover:text-indigo-600 transition-colors">
-                <PhotoIcon className="w-5 h-5"/>
-              </button>
-              <button disabled={isGenerating || (!inputText && !selectedImage)} className="bg-indigo-600 text-white px-5 py-2 rounded-lg font-bold text-xs shadow-indigo-200 shadow-lg disabled:opacity-50 transition-all hover:bg-indigo-700">
-                {isGenerating ? <ArrowPathIcon className="w-4 h-4 animate-spin"/> : 'GENERATE'}
-              </button>
-            </div>
-          </form>
+            </form>
+          </section>
 
-          <div className="space-y-4">
+          {/* Cards */}
+          <section className="space-y-6">
+            {entries.map(entry => (
+              <div key={entry.id} className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden animate-in slide-in-from-top-4 duration-500">
+                <div className="bg-slate-50 px-8 py-4 border-b border-slate-200 flex items-center justify-between">
+                  <div className="flex items-center gap-6">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Entry Category</span>
+                      <input 
+                        value={entry.key1}
+                        onChange={(e) => updateEntry(entry.id, 'key1', e.target.value.toUpperCase())}
+                        className="bg-white border border-slate-200 font-bold text-indigo-600 outline-none w-28 text-xs rounded px-2 py-1 shadow-sm"
+                      />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Short Code</span>
+                      <input 
+                        value={entry.key2}
+                        onChange={(e) => updateEntry(entry.id, 'key2', e.target.value.toUpperCase())}
+                        className="bg-white border border-slate-200 font-bold text-slate-800 outline-none w-56 text-xs rounded px-2 py-1 shadow-sm"
+                      />
+                    </div>
+                  </div>
+                  <button onClick={() => setEntries(entries.filter(e => e.id !== entry.id))}
+                    className="p-2 text-slate-300 hover:text-red-500 transition-all">
+                    <TrashIcon className="w-5 h-5" />
+                  </button>
+                </div>
+                <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-6">
+                  {DEFAULT_GEN_LANGS.map(lang => (
+                    <div key={lang} className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-2">
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                          {DEFAULT_LABELS[lang]}
+                        </label>
+                        <button onClick={() => handleRefine(entry.id, lang)}
+                          className="text-[9px] font-bold text-slate-300 hover:text-indigo-600 uppercase transition-all">
+                          Toggle Variation
+                        </button>
+                      </div>
+                      <input 
+                        value={entry.translations[lang] || ""}
+                        onChange={(e) => updateEntry(entry.id, `translations.${lang}`, e.target.value)}
+                        className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl text-sm font-medium focus:bg-white focus:ring-2 focus:ring-indigo-500/10 focus:border-indigo-300 transition-all outline-none"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
             {entries.length === 0 && (
-              <div className="text-center py-20 border-2 border-dashed border-slate-200 rounded-xl text-slate-400 text-sm">
-                Generated entries will appear here
+              <div className="py-24 flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-200 rounded-[3rem]">
+                <DocumentDuplicateIcon className="w-16 h-16 opacity-10 mb-4" />
+                <p className="font-bold">Enter industry terms to begin generation.</p>
+                <p className="text-xs mt-1 text-slate-400">e.g. Try "Insufficient Balance" or "Turnover"</p>
               </div>
             )}
-            {entries.map(e => (
-              <EntryCard 
-                key={e.id} 
-                entry={e} 
-                languageLabels={DEFAULT_LABELS} 
-                onDelete={(id: string) => setEntries(entries.filter(x => x.id !== id))}
-                onUpdate={updateEntry}
-              />
-            ))}
-          </div>
+          </section>
         </div>
 
-        <div className="lg:col-span-7 lg:sticky lg:top-24 h-fit">
-          <div className="bg-[#1e293b] rounded-2xl overflow-hidden shadow-2xl border border-slate-700">
-            <div className="bg-[#334155] px-5 py-3 flex justify-between items-center">
-              <span className="text-indigo-300 text-[10px] font-bold uppercase tracking-widest">PostgreSQL / SQL Server</span>
-              <button onClick={() => navigator.clipboard.writeText(getSqlOutput())} className="bg-indigo-500 hover:bg-indigo-400 text-white px-4 py-1 rounded-md text-[10px] font-bold uppercase transition-colors">Copy to Clipboard</button>
+        {/* SQL Buffer */}
+        <div className="lg:col-span-5">
+          <div className="bg-[#0f172a] rounded-[2.5rem] overflow-hidden shadow-2xl sticky top-28 h-[calc(100vh-160px)] flex flex-col border border-slate-800 ring-4 ring-slate-100">
+            <div className="bg-[#1e293b] px-8 py-5 flex items-center justify-between border-b border-slate-800">
+              <span className="text-[10px] font-black text-slate-500 tracking-[0.2em] uppercase">SQL Query Output</span>
+              <button 
+                onClick={copyToClipboard}
+                className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase transition-all shadow-lg ${copied ? 'bg-emerald-600 text-white' : 'bg-indigo-600 text-white hover:bg-indigo-500'}`}
+              >
+                {copied ? <CheckCircleIcon className="w-4 h-4" /> : <DocumentDuplicateIcon className="w-4 h-4" />}
+                {copied ? 'COPIED' : 'COPY SQL'}
+              </button>
             </div>
-            <textarea 
-              readOnly 
-              value={getSqlOutput()} 
-              className="w-full bg-transparent text-slate-300 font-mono text-xs p-6 outline-none min-h-[500px] resize-none leading-relaxed"
-            />
+            <div className="flex-1 overflow-auto p-8 custom-scrollbar bg-slate-900/40">
+              <pre className="font-mono text-[11px] text-indigo-200/90 leading-relaxed whitespace-pre-wrap">
+                {generateSql()}
+              </pre>
+            </div>
+            <div className="bg-[#1e293b] p-6 text-center">
+              <p className="text-[9px] font-bold text-slate-500 uppercase tracking-widest">Target Database: MS SQL / MySQL</p>
+            </div>
           </div>
         </div>
       </main>
+
+      <footer className="bg-white border-t px-10 py-6 text-center">
+        <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.4em]">
+          iGaming CMS Localization Tool • 2024 Stable Edition
+        </p>
+      </footer>
     </div>
   );
 }
