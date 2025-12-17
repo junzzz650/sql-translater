@@ -28,8 +28,15 @@ export const handler = async (event: any) => {
         required: ["key1", "key2", "translations"]
       };
 
-      const parts = [];
-      if (image) parts.push({ inlineData: { mimeType: "image/png", data: image } });
+      const parts: any[] = [];
+      if (image) {
+        parts.push({
+          inlineData: {
+            mimeType: "image/png",
+            data: image
+          }
+        });
+      }
       parts.push({ text: text || "Extract text and generate iGaming keys and translations." });
 
       const response = await ai.models.generateContent({
@@ -44,6 +51,7 @@ export const handler = async (event: any) => {
 
       return {
         statusCode: 200,
+        headers: { "Content-Type": "application/json" },
         body: response.text
       };
     }
@@ -59,12 +67,14 @@ export const handler = async (event: any) => {
 
       return {
         statusCode: 200,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: response.text?.trim() })
       };
     }
 
     return { statusCode: 400, body: "Invalid Action" };
   } catch (error: any) {
+    console.error("Function Error:", error);
     return {
       statusCode: 500,
       body: JSON.stringify({ error: error.message })
