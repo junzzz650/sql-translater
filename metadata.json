@@ -1,0 +1,5 @@
+{
+  "name": "SQL Translator & Localizer",
+  "description": "An AI-powered tool to auto-generate unique iGaming language keys and translations for EN, ZH, TH, VN, ID, and MY.",
+  "requestFramePermissions": []
+}
