@@ -1,28 +1,35 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
+// The API key is securely accessed from Netlify's environment variables
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
 
 export const handler = async (event: any) => {
+  // Only allow POST requests
   if (event.httpMethod !== "POST") {
-    return { statusCode: 405, body: "Method Not Allowed" };
+    return { 
+      statusCode: 405, 
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ error: "Method Not Allowed" }) 
+    };
   }
 
   try {
-    const { action, text, image, langs, lang, context } = JSON.parse(event.body);
+    const body = JSON.parse(event.body || "{}");
+    const { action, text, image, langs, lang, context } = body;
 
     if (action === 'generate') {
       const schema = {
         type: Type.OBJECT,
         properties: {
-          key1: { type: Type.STRING },
-          key2: { type: Type.STRING },
+          key1: { type: Type.STRING, description: "Category code" },
+          key2: { type: Type.STRING, description: "Action code" },
           translations: {
             type: Type.OBJECT,
-            properties: langs.reduce((acc: any, l: string) => {
+            properties: (langs || ['en']).reduce((acc: any, l: string) => {
               acc[l] = { type: Type.STRING };
               return acc;
             }, { en: { type: Type.STRING } }),
-            required: [...langs, 'en']
+            required: [...(langs || []), 'en']
           }
         },
         required: ["key1", "key2", "translations"]
@@ -37,13 +44,13 @@ export const handler = async (event: any) => {
           }
         });
       }
-      parts.push({ text: text || "Extract text and generate iGaming keys and translations." });
+      parts.push({ text: text || "Identify the iGaming intent and translate to requested languages." });
 
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: { parts },
         config: {
-          systemInstruction: "You are an iGaming localization expert. Generate a Category (Key1) and ShortCode (Key2) in uppercase, plus translations for all requested languages.",
+          systemInstruction: "You are an iGaming CMS expert. Create SQL-friendly keys (KEY1=Category, KEY2=ShortCode) and professional translations. Use context like 'Spin', 'Bet', 'Deposit', 'Withdraw'.",
           responseMimeType: "application/json",
           responseSchema: schema
         }
@@ -59,9 +66,9 @@ export const handler = async (event: any) => {
     if (action === 'refine') {
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
-        contents: `Refine this iGaming text for ${lang}. Context: ${context}. Text: ${text}`,
+        contents: `Refine this iGaming text for ${lang}. English context: ${context}. Current text: ${text}`,
         config: {
-          systemInstruction: "Return ONLY the refined text string. No quotes, no explanation."
+          systemInstruction: "You are a localization editor. Return ONLY the corrected string. No quotes, no preamble."
         }
       });
 
@@ -72,12 +79,18 @@ export const handler = async (event: any) => {
       };
     }
 
-    return { statusCode: 400, body: "Invalid Action" };
+    return { 
+      statusCode: 400, 
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ error: "Invalid action" }) 
+    };
+
   } catch (error: any) {
-    console.error("Function Error:", error);
+    console.error("Gemini Function Error:", error);
     return {
       statusCode: 500,
-      body: JSON.stringify({ error: error.message })
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ error: error.message || "Internal Server Error" })
     };
   }
 };
