@@ -1,18 +1,16 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { CmsEntry } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || 'FAKE_API_KEY_FOR_DEVELOPMENT' });
-
 const MODEL_NAME = "gemini-3-flash-preview";
 
-// We generate the schema dynamically now based on user config
+// Dynamic schema generation based on selected languages
 const createSchema = (languages: string[]): any => {
   const translationsProps: Record<string, any> = {};
   
   languages.forEach(lang => {
     translationsProps[lang] = { 
         type: Type.STRING,
-        description: lang === 'en' ? "English Translation" : `Translation for language code: ${lang}`
+        description: `iGaming localized string for: ${lang}`
     };
   });
 
@@ -21,11 +19,11 @@ const createSchema = (languages: string[]): any => {
     properties: {
       key1: {
         type: Type.STRING,
-        description: "The Category Key (e.g., BANK, GAME, PROMO). Uppercase. Derived from English meaning.",
+        description: "Category code (e.g. BANK, GAME, PROMO). Max 6 chars.",
       },
       key2: {
         type: Type.STRING,
-        description: "The Short Code Key (e.g., MTC, SPIN, DEPOSIT). Uppercase. Derived from English meaning.",
+        description: "Action or content code (e.g. DEPOSIT, SPIN). Max 8 chars.",
       },
       translations: {
         type: Type.OBJECT,
@@ -42,46 +40,29 @@ export const generateCmsEntry = async (
     targetLanguages: string[], 
     imageBase64?: string
 ): Promise<Omit<CmsEntry, 'id' | 'timestamp'>> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const langs = Array.from(new Set([...targetLanguages, 'en']));
   const schema = createSchema(langs);
 
   const systemInstruction = `
-    You are an expert iGaming SQL Data Generator.
+    You are an expert iGaming CMS Localization Tool.
     
-    Your task is to analyze the input (Text and/or Image) and generate:
-    1. A CATEGORY KEY (Key 1) and a SHORT CODE KEY (Key 2) based on the ENGLISH meaning.
-    2. Translations for the specific requested languages: ${langs.join(', ')}.
-
-    ### INPUT HANDLING
-    - **Language Agnostic**: The input text can be in ANY language. 
-    - **Image Input**: If an image is provided, extract the main text or intent.
-    - **Translation Source**: If input is non-English, translate it to English internally to generate Key 1/Key 2, then translate to all requested target languages.
-
-    ### KEY GENERATION RULES
-    - **Key 1 (Category)**: e.g., BANK, GAME, PROMO, ERR, BTN, SYS, ACC. (Max 4-6 chars, Uppercase).
-    - **Key 2 (Short Code)**: An abbreviation of the content in English. e.g., 'Max Transaction Count' -> 'MTC'. 'Free Spin' -> 'FSPIN'. (Max 6-8 chars, Uppercase).
+    TASK:
+    Generate unique SQL keys and translations for a gambling/casino platform.
+    Key 1 is the Category (uppercase, short).
+    Key 2 is the Descriptive Code (uppercase, short).
     
-    ### TRANSLATION RULES
-    - **Tone**: Professional, Concise, iGaming appropriate (Exciting for Promos, Clear for Errors).
-    - **Format**: Return strict JSON matching the schema.
+    CONTEXT:
+    The input might be an image of a game UI or a text description.
+    Ensure translations are professional and context-aware (e.g., 'Bet' vs 'Wager').
   `;
 
   try {
     const parts: any[] = [];
-    
     if (imageBase64) {
-      parts.push({
-        inlineData: {
-          mimeType: "image/png", 
-          data: imageBase64
-        }
-      });
-      parts.push({
-        text: textInput ? `Analyze this image in context of: "${textInput}"` : "Analyze the text and context in this image."
-      });
-    } else {
-      parts.push({ text: textInput });
+      parts.push({ inlineData: { mimeType: "image/png", data: imageBase64 } });
     }
+    parts.push({ text: textInput || "Extract meaning from image and translate." });
 
     const response = await ai.models.generateContent({
       model: MODEL_NAME,
@@ -90,52 +71,38 @@ export const generateCmsEntry = async (
         systemInstruction: systemInstruction,
         responseMimeType: "application/json",
         responseSchema: schema,
-        temperature: 0.3,
       },
     });
 
-    const text = response.text;
-    if (!text) throw new Error("No response from AI");
-
-    const data = JSON.parse(text);
+    const data = JSON.parse(response.text || "{}");
 
     return {
-      key1: data.key1,
-      key2: data.key2,
+      key1: data.key1?.toUpperCase() || "NEW",
+      key2: data.key2?.toUpperCase() || "KEY",
       translations: data.translations,
     };
   } catch (error) {
-    console.error("Gemini API Error:", error);
+    console.error("Gemini Generation Error:", error);
     throw error;
   }
 };
 
 export const refineText = async (targetLang: string, currentText: string, englishContext: string): Promise<string> => {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const systemInstruction = `
-    You are an expert iGaming Localization Specialist.
-    
-    Task: Refine or Translate text for an Online Casino/Betting platform.
-    Target Language Code: "${targetLang}"
-    English Context: "${englishContext}"
-
-    Instructions:
-    1. If the current text is empty or looks wrong, TRANSLATE the "English Context" to "${targetLang}".
-    2. If the current text exists, REFINE it to be professional, concise, and native-sounding for iGaming.
-    3. Return ONLY the final text string. No explanations.
+    Refine this iGaming text for language: ${targetLang}.
+    Context: ${englishContext}
+    Return ONLY the corrected/refined text.
   `;
 
   try {
     const response = await ai.models.generateContent({
         model: MODEL_NAME,
-        contents: { parts: [{ text: currentText || " " }] }, 
-        config: {
-            systemInstruction: systemInstruction,
-            temperature: 0.7,
-        },
+        contents: { parts: [{ text: currentText || englishContext }] }, 
+        config: { systemInstruction },
     });
     return response.text?.trim() || currentText;
   } catch (e) {
-      console.error("Gemini Refine Error:", e);
       return currentText;
   }
 };
