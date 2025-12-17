@@ -1,10 +1,12 @@
-import { GoogleGenAI, Type, Schema } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { CmsEntry } from "../types";
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
+const MODEL_NAME = "gemini-3-flash-preview";
+
 // We generate the schema dynamically now based on user config
-const createSchema = (languages: string[]): Schema => {
+const createSchema = (languages: string[]): any => {
   const translationsProps: Record<string, any> = {};
   
   languages.forEach(lang => {
@@ -28,7 +30,7 @@ const createSchema = (languages: string[]): Schema => {
       translations: {
         type: Type.OBJECT,
         properties: translationsProps,
-        required: languages, // Force AI to generate all requested languages
+        required: languages, 
       },
     },
     required: ["key1", "key2", "translations"],
@@ -40,9 +42,6 @@ export const generateCmsEntry = async (
     targetLanguages: string[], 
     imageBase64?: string
 ): Promise<Omit<CmsEntry, 'id' | 'timestamp'>> => {
-  const modelId = "gemini-2.5-flash"; 
-
-  // Ensure EN is always there for context, though usually passed in targetLanguages
   const langs = Array.from(new Set([...targetLanguages, 'en']));
   const schema = createSchema(langs);
 
@@ -50,23 +49,21 @@ export const generateCmsEntry = async (
     You are an expert iGaming SQL Data Generator.
     
     Your task is to analyze the input (Text and/or Image) and generate:
-    1. A CATEGORY KEY (Key1) and a SHORT CODE KEY (Key2) based on the ENGLISH meaning.
+    1. A CATEGORY KEY (Key 1) and a SHORT CODE KEY (Key 2) based on the ENGLISH meaning.
     2. Translations for the specific requested languages: ${langs.join(', ')}.
 
     ### INPUT HANDLING
     - **Language Agnostic**: The input text can be in ANY language. 
     - **Image Input**: If an image is provided, extract the main text or intent.
-    - **Translation Source**: If input is non-English, translate it to English internally to generate Key1/Key2, then translate to all requested target languages.
+    - **Translation Source**: If input is non-English, translate it to English internally to generate Key 1/Key 2, then translate to all requested target languages.
 
     ### KEY GENERATION RULES
-    - **Key1 (Category)**: e.g., BANK, GAME, PROMO, ERR, BTN, SYS, ACC. (Max 4-6 chars, Uppercase).
-    - **Key2 (Short Code)**: An abbreviation of the content in English. e.g., 'Max Transaction Count' -> 'MTC'. 'Free Spin' -> 'FSPIN'. (Max 6-8 chars, Uppercase).
+    - **Key 1 (Category)**: e.g., BANK, GAME, PROMO, ERR, BTN, SYS, ACC. (Max 4-6 chars, Uppercase).
+    - **Key 2 (Short Code)**: An abbreviation of the content in English. e.g., 'Max Transaction Count' -> 'MTC'. 'Free Spin' -> 'FSPIN'. (Max 6-8 chars, Uppercase).
     
     ### TRANSLATION RULES
     - **Tone**: Professional, Concise, iGaming appropriate (Exciting for Promos, Clear for Errors).
     - **Format**: Return strict JSON matching the schema.
-    - **Language Codes**:
-      ${langs.map(l => `- ${l}: Generate translation for '${l}'.`).join('\n')}
   `;
 
   try {
@@ -87,7 +84,7 @@ export const generateCmsEntry = async (
     }
 
     const response = await ai.models.generateContent({
-      model: modelId,
+      model: MODEL_NAME,
       contents: { parts }, 
       config: {
         systemInstruction: systemInstruction,
@@ -113,13 +110,7 @@ export const generateCmsEntry = async (
   }
 };
 
-/**
- * Refines text for ANY language.
- * If targetLang is English ('en'), it polishes it.
- * If targetLang is others (e.g., 'cn'), it translates/refines based on the English context.
- */
 export const refineText = async (targetLang: string, currentText: string, englishContext: string): Promise<string> => {
-  const modelId = "gemini-2.5-flash";
   const systemInstruction = `
     You are an expert iGaming Localization Specialist.
     
@@ -135,7 +126,7 @@ export const refineText = async (targetLang: string, currentText: string, englis
 
   try {
     const response = await ai.models.generateContent({
-        model: modelId,
+        model: MODEL_NAME,
         contents: { parts: [{ text: currentText || " " }] }, 
         config: {
             systemInstruction: systemInstruction,
